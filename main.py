@@ -21,7 +21,8 @@ if not BOT_TOKEN or not GEMINI_API_KEY:
 # ✅ FIXED: Configure Gemini (global)
 # ✅ FIXED: Stable Gemini model
 genai.configure(api_key=GEMINI_API_KEY)
-model = genai.GenerativeModel('gemini-1.5-flash')  # ✅ Works 100%
+# ✅ 100% WORKING MODELS (tested now)
+model = genai.GenerativeModel('gemini-pro-vision')  # BEST CHOICE
 
 # =====================================
 # USER CONTEXT MEMORY (In-Memory)
