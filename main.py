@@ -4,7 +4,7 @@ from PIL import Image
 from io import BytesIO
 import tempfile
 import os
-from google.generativeai import GenerativeModel  # Fixed import
+import google.generativeai as genai  # ✅ FIXED IMPORT
 import asyncio
 from telegram import Update
 from telegram.ext import ApplicationBuilder, CommandHandler, ContextTypes
@@ -18,15 +18,9 @@ GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 if not BOT_TOKEN or not GEMINI_API_KEY:
     raise ValueError("❌ BOT_TOKEN and GEMINI_API_KEY must be set!")
 
-# Initialize Gemini client (fixed)
-model = GenerativeModel(
-    model_name="gemini-2.5-flash-exp",
-    api_key=GEMINI_API_KEY,
-    generation_config={
-        "temperature": 0.7,
-        "top_p": 0.8,
-    }
-)
+# ✅ FIXED: Configure Gemini (global)
+genai.configure(api_key=GEMINI_API_KEY)
+model = genai.GenerativeModel('gemini-2.0-flash-exp')  # ✅ Correct way
 
 # =====================================
 # USER CONTEXT MEMORY (In-Memory)
@@ -117,7 +111,7 @@ def download_earth_image(lat, lon):
         print(f"Image processing failed: {e}")
         raise RuntimeError("❌ Invalid image received")
 
-    # 🔍 Check for black (missing data)
+    # 🔍 Check for black pixels
     img_small = img.resize((100, 100))
     black_pixels = sum(1 for p in img_small.getdata() if p == (0, 0, 0))
     total_pixels = 100 * 100
@@ -128,7 +122,7 @@ def download_earth_image(lat, lon):
         r = requests.get(NASA_GIBS_WMS, params=params, timeout=15)
         img = Image.open(BytesIO(r.content)).convert("RGB")
 
-    # 🚀 Use Railway temp storage
+    # 🚀 Railway temp storage
     temp_file = tempfile.NamedTemporaryFile(
         suffix=f"_iss_{lat:.2f}_{lon:.2f}.png",
         delete=False
@@ -144,23 +138,7 @@ def ask_ai_with_image(question, image_path, iss_data):
     try:
         img = Image.open(image_path)
 
-        # 👇 Detect question type
-        if "what is this satellite for" in question.lower():
-            prompt = f"""
-You are a satellite expert.
-
-Answer the user's question clearly and directly.
-
-ISS Position:
-Latitude: {iss_data['latitude']:.2f}°
-Longitude: {iss_data['longitude']:.2f}°
-
-Question: {question}
-
-Only answer the question. Do NOT describe the image.
-"""
-        else:
-            prompt = f"""
+        prompt = f"""
 You are a satellite expert analyzing Earth from ISS.
 
 ISS Position:
@@ -169,8 +147,7 @@ Longitude: {iss_data['longitude']:.2f}°
 
 User question: {question}
 
-If the question is about the image, explain what is visible.
-If not, just answer the question clearly and concisely.
+Answer clearly and concisely. If about the image, describe what you see.
 """
 
         response = model.generate_content([prompt, img])
@@ -178,21 +155,20 @@ If not, just answer the question clearly and concisely.
 
     except Exception as e:
         print(f"AI error: {e}")
-        return "❌ AI analysis unavailable. Try again!"
+        return "❌ AI temporarily unavailable. Try /iss again!"
+
+# ... [REST OF YOUR CODE REMAINS SAME - handlers, main function] ...
 
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
     text = update.message.text or ""
 
-    # ❌ No context yet
     if user_id not in user_context:
-        await update.message.reply_text("⚠️ Please use /iss first to get ISS location!")
+        await update.message.reply_text("⚠️ Please use /iss first!")
         return
 
     data = user_context[user_id]
-
-    # 🧠 Use AI with stored image
-    await update.message.reply_text("🤖 Analyzing with AI...")
+    await update.message.reply_text("🤖 AI analyzing...")
 
     answer = await asyncio.to_thread(
         ask_ai_with_image,
@@ -203,104 +179,52 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     await update.message.reply_text(answer)
 
-# =====================================
-# TELEGRAM COMMANDS
-# =====================================
 async def iss_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try:
-        await update.message.reply_text("🛰️ Fetching live ISS data...")
-        
-        iss = get_iss_position()
-        lat = iss["latitude"]
-        lon = iss["longitude"]
-        alt = iss["altitude"]
-        vel = iss["velocity"]
-        
-        await update.message.reply_text("🌍 Downloading Earth image from space...")
-        file = download_earth_image(lat, lon)
+        await update.message.reply_text("🛰️ Fetching ISS...")
+        iss_data = get_iss_position()
+        file_path = download_earth_image(iss_data["latitude"], iss_data["longitude"])
 
-        # Save context for this user (with cleanup)
         user_context[update.effective_user.id] = {
-            "image_path": file,
-            "iss_data": iss,
-            "timestamp": datetime.utcnow()
+            "image_path": file_path,
+            "iss_data": iss_data
         }
 
         text = f"""
-🛰️ **ISS Live Telemetry**
+🛰️ **ISS Live**
 
-🌐 **Position:**
-- Lat: {lat:.2f}°
-- Lon: {lon:.2f}°
-
-🪂 **Orbit:**
-- Altitude: {alt} km
-- Velocity: {vel} km/h
+🌐 Lat: {iss_data['latitude']:.2f}° | Lon: {iss_data['longitude']:.2f}°
+🪂 Alt: {iss_data['altitude']}km | Speed: {iss_data['velocity']}km/h
         """
         
         await update.message.reply_text(text, parse_mode='Markdown')
         
-        # Send photo
-        try:
-            with open(file, "rb") as photo:
-                await update.message.reply_photo(
-                    photo=photo,
-                    caption="🌍 Earth view from ISS right now!"
-                )
-        except Exception as e:
-            print(f"Photo send error: {e}")
-            await update.message.reply_text("✅ Data ready! Image temporarily unavailable.")
+        with open(file_path, "rb") as photo:
+            await update.message.reply_photo(photo=photo, caption="🌍 From ISS now!")
             
     except Exception as e:
-        print(f"ISS command error: {e}")
-        await update.message.reply_text("❌ Failed to fetch ISS data. Try again!")
+        await update.message.reply_text(f"❌ Error: {str(e)}")
 
 async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    text = """
-👋 **ISS Earth Explorer Bot**
+    await update.message.reply_text("""
+👋 **ISS Earth Bot**
 
-🛰️ Track the **International Space Station** in real time!
+/iss - Live ISS location + Earth photo
+Then ask AI questions!
 
-**Commands:**
-/iss - Get live ISS position + Earth photo
-- Then ask AI about what you see!
+By Andrew 🚀
+    """, parse_mode='Markdown')
 
-**Example questions:**
-- "What country is this?"
-- "Ocean or land?"
-- "What city is visible?"
-- "Weather conditions?"
-
-**By Andrew (Zay Bhone Aung)**
-🚀 Powered by NASA + Gemini AI
-    """
-    await update.message.reply_text(text, parse_mode='Markdown')
-
-# =====================================
-# RAILWAY MAIN (Polling - Simple & Reliable)
-# =====================================
 def main():
-    print("🚀 Starting ISS Bot on Railway...")
-    print(f"🌐 Railway Env: {os.getenv('RAILWAY_ENVIRONMENT', 'local')}")
-    print("✅ Environment variables loaded")
-    
+    print("🚀 ISS Bot starting...")
     app = ApplicationBuilder().token(BOT_TOKEN).build()
     
-    # Handlers
     app.add_handler(CommandHandler("start", start_command))
     app.add_handler(CommandHandler("iss", iss_command))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
 
-    print("🤖 Bot handlers registered")
-    print("🌍 Ready to track ISS! Starting polling...")
-    
-    # Run with polling (works perfectly on Railway)
-    app.run_polling(
-        drop_pending_updates=True,
-        allowed_updates=Update.ALL_TYPES,
-        timeout=30,
-        bootstrap_retries=-1  # Unlimited retries
-    )
+    print("✅ Bot ready!")
+    app.run_polling(drop_pending_updates=True)
 
 if __name__ == "__main__":
     main()
