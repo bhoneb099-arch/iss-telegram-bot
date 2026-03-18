@@ -19,8 +19,9 @@ if not BOT_TOKEN or not GEMINI_API_KEY:
     raise ValueError("❌ BOT_TOKEN and GEMINI_API_KEY must be set!")
 
 # ✅ FIXED: Configure Gemini (global)
+# ✅ FIXED: Stable Gemini model
 genai.configure(api_key=GEMINI_API_KEY)
-model = genai.GenerativeModel('gemini-2.0-flash-exp')  # ✅ Correct way
+model = genai.GenerativeModel('gemini-1.5-flash')  # ✅ Works 100%
 
 # =====================================
 # USER CONTEXT MEMORY (In-Memory)
