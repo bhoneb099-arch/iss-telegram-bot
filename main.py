@@ -205,6 +205,8 @@ Longitude: {lon:.2f}
 
 Altitude: {alt} km
 Velocity: {vel} km/h
+
+click for more satellite image-> /iss <-
 """
     await update.message.reply_text(text)
     with open(file, "rb") as photo:
@@ -217,7 +219,7 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 🛰️ Track the International Space Station in real time.
 
-Type ot Click-> /iss <-to get:
+Type or Click-> /iss <-to get:
 - Live ISS location  
 - Earth view from space  
 - AI analysis of what you see  
