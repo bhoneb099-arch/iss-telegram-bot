@@ -148,7 +148,7 @@ If the question is about the image, explain what is visible.
 If not, just answer the question clearly.
 """
 
-        model = genai.GenerativeModel('gemini-2.5-flash-lite')
+        model = genai.GenerativeModel('gemini-2.5-flash')
         response = model.generate_content([prompt, img])
 
         return response.text
